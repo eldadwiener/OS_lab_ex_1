@@ -8,8 +8,8 @@ import os
 #
 # Globals
 #
-DEVICE_PATH = '/dev/s19_device'
-
+DEVICE_PATH1 = '/dev/s19_devicess'
+DEVICE_PATH2= '/dev/s19_devices'
 
 #
 # Utilities for calculating the IOCTL command codes.
@@ -80,24 +80,29 @@ def main():
     #
     # Open the 'my_moulde' device driver
     #
-    f = os.open(DEVICE_PATH, os.O_RDWR)
+    f = os.open(DEVICE_PATH1, os.O_RDWR)
+    #g = os.open(DEVICE_PATH2, os.O_RDONLY)
+    #os.write(g, 'hello world')
+    #os.close(g)
+
     
+   
     #
     # Test writing and reading
     #
     os.write(f, 'hello world')
-    print 'String read:\n%s' % os.read(f, 30)
+    print ('String read:\n%s') % os.read(f, 30)
 
     #
     # Test the IOCTL command
     #
-    fcntl.ioctl(f, MY_OP1)    
+    # fcntl.ioctl(f, MY_OP1)    
 
     #
     # Finaly close the file
     #
+   
     os.close(f)
-
     
 if __name__ == '__main__':
     main()
