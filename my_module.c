@@ -35,6 +35,7 @@ struct buff_data {
 	char buff[BUFF_SIZE];
 	int curr_buff_size;
 	int lseek;
+	int seed;
 	enum Modes my_mode;
 };
 
@@ -241,4 +242,5 @@ struct buff_list* mk_node(enum Modes mode, int key) {
 	new_node->key = key;
 	new_node->p_next = NULL;
 	new_node->my_buff->my_mode = mode;
+	new_node->my_buff->seed = 0;
 }
