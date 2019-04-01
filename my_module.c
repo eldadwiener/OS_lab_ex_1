@@ -11,6 +11,7 @@
 #include <linux/fs.h>       		
 #include <asm/uaccess.h>
 #include <linux/errno.h>  
+#include <linux/slab.h>
 
 #include "my_module.h"
 
@@ -91,11 +92,22 @@ void cleanup_module(void)
 
 int my_open(struct inode *inode, struct file *filp)
 {
+// TODO: EVERYTHING
+	if (dev_busy == 1) {
+		printk("BUSTED BIATCH\n");
+		return -EBUSY;
+	}
+	dev_busy = 1;
+	if (_buf == 0){
+		_buf = (char*)kmalloc(4096 ,GFP_KERNEL);
+		// TODO : what happens if fail?
+	}
+
     if (filp->f_mode & FMODE_READ)
     {
-	//
-	// handle read opening
-	//
+		//
+		// handle read opening
+		//
     }
     
     if (filp->f_mode & FMODE_WRITE)
@@ -113,9 +125,9 @@ int my_release(struct inode *inode, struct file *filp)
 {
     if (filp->f_mode & FMODE_READ)
     {
-	//
-	// handle read closing
-	// 
+		//
+		// handle read closing
+		//
     }
     
     if (filp->f_mode & FMODE_WRITE)
