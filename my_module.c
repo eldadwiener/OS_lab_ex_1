@@ -36,8 +36,9 @@ typedef struct buff_data {
 	char buff[BUFF_SIZE];
 	int curr_buff_size;
 	int lseek;
-	int seed;
+	unsigned long seed;
 	Modes my_mode;
+	int open;
 }buff_data;
 
 
@@ -60,7 +61,6 @@ buff_list* mk_node(int key);
 buff_list* find_node(int key);
 void add_node(buff_list* new_node);
 void rm_node(int key);
-void mem_cpy(char* dst, char* src, unsigned int size);
 uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed);
 
 int init_module(void)
@@ -73,9 +73,6 @@ int init_module(void)
 		return my_major;
 	}
 	printk("Major number: %d\n", my_major);
-	//
-	// do_init();
-	//
 	return 0;
 }
 
@@ -91,8 +88,8 @@ void cleanup_module(void)
 		kfree(head->my_buff);
 		kfree(head);
 		head = tmp;
-		printk("removed %d buffers", ++i);
 	}
+	printk("removed %d buffers\n", ++i);
 	return;
 }
 
@@ -108,7 +105,12 @@ int my_open(struct inode *inode, struct file *filp)
 		add_node(node);
 	}
 	else // for debug help
-		printk("device file for minor %d was already opened\n", key);
+		printk("device file node for minor %d already exists\n", key);
+	if (node->my_buff->open) {
+		printk("device file for minor %d is currently opened\n", key);
+		return 0;
+	}
+	node->my_buff->open = 1;
 	node->my_buff->my_mode = my_NA;
 	if (filp->f_mode & FMODE_READ)
 		node->my_buff->my_mode += my_RO;
@@ -121,29 +123,18 @@ int my_open(struct inode *inode, struct file *filp)
 
 int my_release(struct inode *inode, struct file *filp)
 {
-	if (filp->f_mode & FMODE_READ)
-	{
-		//
-		// handle read closing
-		//
-	}
-
-	if (filp->f_mode & FMODE_WRITE)
-	{
-		//
-		// handle write closing
-		//
-	}
-
+	((buff_list*)filp->private_data)->my_buff->open = 0;
+	((buff_list*)filp->private_data)->my_buff->my_mode = my_NA;
 	return 0;
 }
 
 
+
+//
+// Do read operation.
+// Return number of bytes read.
 ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
-	//
-	// Do read operation.
-	// Return number of bytes read.
 	buff_list* node = (buff_list*)filp->private_data;
 	if ((node->my_buff->my_mode & 0x1) == 0) // read possible if mode is 1 or 3 (LSB = 1)
 	{
@@ -159,9 +150,6 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	// create the output data
 	char* res = (char*)kmalloc(count+ sizeof(uint32_t), GFP_KERNEL);
 	char* key = (node->my_buff->buff) + (node->my_buff->lseek);
-	//char* toSend = (char*)kmalloc(count, GFP_KERNEL);
-	//mem_cpy(res+4, (node->my_buff->buff) + (node->my_buff->lseek), count);
-	//mem_cpy(toSend , (node->my_buff->buff) + (node->my_buff->lseek), count);
 	uint32_t hash = murmur3_32(key, count, node->my_buff->seed);
 	printk("done hashing\n");
 	int i;
@@ -183,8 +171,8 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 		kfree(res);
 		return -ENOMEM;
 	}
-	printk("done copying to user\n");
 	node->my_buff->lseek += count;
+	printk("done copying to user, lseek = %d\n", node->my_buff->lseek);
 	count += sizeof(hash);
 	kfree(res);
 	printk("read complete, Hash value is: %u, Return value: %u\n",hash,count);
@@ -192,11 +180,11 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 }
 
 
+//
+// Do write operation.
+// Return number of bytes written.
 ssize_t my_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
 {
-	//
-	// Do write operation.
-	// Return number of bytes written.
 	buff_list* node = (buff_list*)filp->private_data;
 	if ((node->my_buff->my_mode & 0x2) == 0) // read possible if mode is 2 or 3 (MSB = 1)
 	{
@@ -224,7 +212,7 @@ ssize_t my_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos
 	for (i = 0; i < node->my_buff->curr_buff_size; i++) {
 		printk("%c", node->my_buff->buff[i]);
 	}
-	printk("\nDone Writing\n");
+	printk("\nDone Writing, curr_buf_size =%d\n", node->my_buff->curr_buff_size);
 	return count;
 }
 
@@ -233,16 +221,25 @@ int my_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned 
 {
 	switch (cmd)
 	{
-	case MY_OP1:
-		//
-		// handle OP 1.
-		//
+	case MY_RESET:
+		printk("RESET is on\n");
+		if (filp->private_data == NULL) return 0;
+		((buff_list*)filp->private_data)->my_buff->lseek = 0;
+		((buff_list*)filp->private_data)->my_buff->curr_buff_size = 0;
 		break;
-
+	case MY_RESTART:
+		printk("RESTART is on\n");
+		if (filp->private_data == NULL) return 0;
+		((buff_list*)filp->private_data)->my_buff->lseek = 0;
+		break;
+	case MY_SET_SEED:
+		printk("SEED changed from %lu to %lu\n", ((buff_list*)filp->private_data)->my_buff->seed, arg);
+		if (filp->private_data == NULL) return 0;
+		((buff_list*)filp->private_data)->my_buff->seed = arg;
+		break;
 	default:
 		return -ENOTTY;
 	}
-
 	return 0;
 }
 
@@ -329,16 +326,9 @@ buff_list* mk_node(int key) {
 	new_node->my_buff->my_mode = 0;
 	new_node->my_buff->seed = 0;
 	new_node->my_buff->curr_buff_size = 0;
+	new_node->my_buff->open = 0;
 	new_node->my_buff->lseek = 0;
 	return new_node;
 }
 
 
-void mem_cpy(char* dst, char* src, unsigned int size)
-{
-	while (size > 0)
-	{
-		--size;
-		dst[size] = src[size];
-	}
-}

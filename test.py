@@ -74,39 +74,48 @@ def main():
     os.system('rmmod my_module')
     os.system('insmod /mnt/hgfs/shared_folder/OS_lab_ex_1/my_module.o')
     os.system('mknod %s c 254 3' % DEVICE_PATH1)
-    
+    os.system('mknod %s c 254 2' % DEVICE_PATH2)
     #
     # Calculate the ioctl cmd number
     #
     MY_MAGIC = 'r'
     MY_OP1 = _IOW(MY_MAGIC, 0, 'int')
+    MY_OP2 = _IOW(MY_MAGIC, 1, 'int')
+    MY_OP3 = _IOW(MY_MAGIC, 2, 'int')
     
     #
     # Open the 'my_moulde' device driver
     #
     f = os.open(DEVICE_PATH1, os.O_RDWR)
-    #g = os.open(DEVICE_PATH2, os.O_RDONLY)
-    #os.write(g, 'hello world')
-    #os.close(g)
-
+    g = os.open(DEVICE_PATH2, os.O_RDWR)
+    os.write(g, 'WTF_'*1500)
+    print ('String read g:\n%s') % os.read(g, 30)
     
    
     #
     # Test writing and reading
     #
-    os.write(f, 'hello world whahtttata')
-    print ('String read:\n%s') % os.read(f, 10)
-    print ('String read:\n%s') % os.read(f, 5)
+    os.write(f, 'hello world')
+    print ('String read f:\n%s') % os.read(f, 30)
+    print ('String read f:\n%s') % os.read(f, 5)
     os.write(f, 'hell of world whahtttata')
-    print ('String read:\n%s') % os.read(f, 5)
+    print ('String read f:\n%s') % os.read(f, 5)
     os.close(f)
     f = os.open(DEVICE_PATH1, os.O_RDWR)
-    print ('String read:\n%s') % os.read(f, 90)
+    os.write(f, 'hell of world whahtttata')
+    print ('String read f:\n%s') % os.read(f, 5)
     #
     # Test the IOCTL command
     #
-    # fcntl.ioctl(f, MY_OP1)    
-
+    fcntl.ioctl(f, MY_OP1)
+    fcntl.ioctl(g, MY_OP2)
+    print ('String read:\n%s') % os.read(g, 30)
+    fcntl.ioctl(g, MY_OP2)
+    fcntl.ioctl(f, MY_OP3, 74)
+    fcntl.ioctl(g, MY_OP3, 74)
+    print ('String read g:\n%s') % os.read(g, 30)
+    os.write(f, 'hello world')    
+    print ('String read f:\n%s') % os.read(f, 90)
     #
     # Finaly close the file
     #
