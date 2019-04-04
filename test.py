@@ -70,6 +70,10 @@ def _IOW(_type, nr, size):
 
 def main():
     """Test the device driver"""
+    os.system('rm -f /dev/s19_devic*')
+    os.system('rmmod my_module')
+    os.system('insmod /mnt/hgfs/shared_folder/OS_lab_ex_1/my_module.o')
+    os.system('mknod %s c 254 3' % DEVICE_PATH1)
     
     #
     # Calculate the ioctl cmd number
@@ -90,9 +94,14 @@ def main():
     #
     # Test writing and reading
     #
-    os.write(f, 'hello world')
-    print ('String read:\n%s') % os.read(f, 30)
-
+    os.write(f, 'hello world whahtttata')
+    print ('String read:\n%s') % os.read(f, 10)
+    print ('String read:\n%s') % os.read(f, 5)
+    os.write(f, 'hell of world whahtttata')
+    print ('String read:\n%s') % os.read(f, 5)
+    os.close(f)
+    f = os.open(DEVICE_PATH1, os.O_RDWR)
+    print ('String read:\n%s') % os.read(f, 90)
     #
     # Test the IOCTL command
     #

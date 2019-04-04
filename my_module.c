@@ -157,22 +157,37 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	if (count == 0) return 0;
 	printk("creating output data\n");
 	// create the output data
-	char* toSend = (char*)kmalloc(count + 4, GFP_KERNEL);
-	mem_cpy(toSend + 4, (node->my_buff->buff) + (node->my_buff->lseek), count);
-	*((uint32_t*)toSend) = murmur3_32(toSend + 4, count, node->my_buff->seed);
-	printk("here\n");
-	if (copy_to_user(buf, toSend, count + 4))
+	char* res = (char*)kmalloc(count+ sizeof(uint32_t), GFP_KERNEL);
+	char* key = (node->my_buff->buff) + (node->my_buff->lseek);
+	//char* toSend = (char*)kmalloc(count, GFP_KERNEL);
+	//mem_cpy(res+4, (node->my_buff->buff) + (node->my_buff->lseek), count);
+	//mem_cpy(toSend , (node->my_buff->buff) + (node->my_buff->lseek), count);
+	uint32_t hash = murmur3_32(key, count, node->my_buff->seed);
+	printk("done hashing\n");
+	int i;
+	// start of copy from forum
+	char* hash_casted = (char*)&hash;
+	for (i = 0; i<sizeof(uint32_t); i++) {
+		res[i] = hash_casted[i];
+	}
+
+	for (i = 0; i<count; i++) {
+		res[i + sizeof(uint32_t)] = key[i];
+	}
+
+	res[sizeof(uint32_t) + count] = '\0';
+	// end of copy from forum
+	if (copy_to_user(buf, res, count + 4))
 	{
 		printk("Error while copying to user space\n");
-		kfree(toSend);
+		kfree(res);
 		return -ENOMEM;
 	}
-	printk("here2\n");
-	// TODO: what exactly do we need to copy to user, and what to return?!
+	printk("done copying to user\n");
 	node->my_buff->lseek += count;
-	count += *((uint32_t*)toSend);
-	kfree(toSend);
-	printk("here3\n");
+	count += sizeof(hash);
+	kfree(res);
+	printk("read complete, Hash value is: %u, Return value: %u\n",hash,count);
 	return count;
 }
 
@@ -205,6 +220,11 @@ ssize_t my_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos
 		return -ENOMEM;
 	}
 	node->my_buff->curr_buff_size += count;
+	int i = 0;
+	for (i = 0; i < node->my_buff->curr_buff_size; i++) {
+		printk("%c", node->my_buff->buff[i]);
+	}
+	printk("\nDone Writing\n");
 	return count;
 }
 
