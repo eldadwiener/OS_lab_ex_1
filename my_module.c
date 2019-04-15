@@ -27,11 +27,16 @@ struct buff_list;
 int my_major = 0; /* will hold the major # of my device driver */
 struct buff_list* head = NULL;
 
+
+/* definitions of types and structs*/
+
+// stats for the FSMs
 typedef enum Modes
 {
 	my_NA = 0, my_RO = 1, my_WO = 2, my_RW = 3
 }Modes;
 
+// buffers related to each device file
 typedef struct buff_data {
 	char buff[BUFF_SIZE];
 	int curr_buff_size;
@@ -41,14 +46,14 @@ typedef struct buff_data {
 	int open;
 }buff_data;
 
-
+// linked list to hold the buffers
 typedef struct buff_list {
 	int key;
 	struct buff_data* my_buff;
 	struct buff_list* p_next;
 }buff_list;
 
-
+// overload for device driver operations
 struct file_operations my_fops = {
 	.open = my_open,
 	.release = my_release,
@@ -63,6 +68,8 @@ void add_node(buff_list* new_node);
 void rm_node(int key);
 uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed);
 
+
+// init func, register the device
 int init_module(void)
 {
 	my_major = register_chrdev(my_major, MY_DEVICE, &my_fops);
@@ -76,7 +83,7 @@ int init_module(void)
 	return 0;
 }
 
-
+// unregister the device, and all of the linked list
 void cleanup_module(void)
 {
 	unregister_chrdev(my_major, MY_DEVICE);
@@ -93,7 +100,8 @@ void cleanup_module(void)
 	return;
 }
 
-
+// open func for the device, check if a buffer exists in the linked list.
+// create one if not and update the variables of the buffer (read/write)
 int my_open(struct inode *inode, struct file *filp)
 {
 	unsigned int key = MINOR(inode->i_rdev);
@@ -110,17 +118,20 @@ int my_open(struct inode *inode, struct file *filp)
 		printk("device file for minor %d is currently opened\n", key);
 		return 0;
 	}
+	// update the node to indicate the file is open
 	node->my_buff->open = 1;
+	// update device open mode (read/write)
 	node->my_buff->my_mode = my_NA;
 	if (filp->f_mode & FMODE_READ)
 		node->my_buff->my_mode += my_RO;
 	if (filp->f_mode & FMODE_WRITE)
 		node->my_buff->my_mode += my_WO;
+	// keep node in private_data for future use
 	filp->private_data = node;
 	return 0;
 }
 
-
+// device close function, update the buffer node to closed status
 int my_release(struct inode *inode, struct file *filp)
 {
 	((buff_list*)filp->private_data)->my_buff->open = 0;
@@ -141,7 +152,7 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 		printk("Tried to read from device file that is not in Read mode, DAMN\n");
 		return 0;
 	}
-	// make sure we don't overflow
+	// make sure we don't overflow (take all the data if higher amount was requested)
 	int dataLeft = (node->my_buff->curr_buff_size) - (node->my_buff->lseek);
 	if (count > dataLeft) count = dataLeft;
 	// if there is nothing to read we can just return now.
@@ -153,7 +164,7 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	uint32_t hash = murmur3_32(key, count, node->my_buff->seed);
 	printk("done hashing\n");
 	int i;
-	// start of copy from forum
+	// Concat the hash to the string
 	char* hash_casted = (char*)&hash;
 	for (i = 0; i<sizeof(uint32_t); i++) {
 		res[i] = hash_casted[i];
@@ -164,7 +175,7 @@ ssize_t my_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	}
 
 	res[sizeof(uint32_t) + count] = '\0';
-	// end of copy from forum
+	// Done concating, copy to user
 	if (copy_to_user(buf, res, count + 4))
 	{
 		printk("Error while copying to user space\n");
@@ -191,6 +202,7 @@ ssize_t my_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos
 		printk("Tried to write to device file that is not in write mode, DAMN\n");
 		return 0;
 	}
+	// make sure write request isn't bad
 	int csize = node->my_buff->curr_buff_size;
 	if (count > (BUFF_SIZE - csize))
 	{
@@ -202,21 +214,19 @@ ssize_t my_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos
 		printk("Can't write string of len 0 (OBVIOUSLY GEEZ)\n");
 		return -EINVAL;
 	}
+	//write is good, get the data from the user
 	if (copy_from_user((node->my_buff->buff + csize), buf, count))
 	{
 		printk("Error while copying from user space\n");
 		return -ENOMEM;
 	}
 	node->my_buff->curr_buff_size += count;
-	int i = 0;
-	for (i = 0; i < node->my_buff->curr_buff_size; i++) {
-		printk("%c", node->my_buff->buff[i]);
-	}
 	printk("\nDone Writing, curr_buf_size =%d\n", node->my_buff->curr_buff_size);
 	return count;
 }
 
-
+// handler for ioctl requests, parse input and perform
+// the requested action (RESET,SEED,RESTART)
 int my_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	switch (cmd)
@@ -224,17 +234,20 @@ int my_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned 
 	case MY_RESET:
 		printk("RESET is on\n");
 		if (filp->private_data == NULL) return 0;
+		// set read and write to the start of the buffer to invalidate current data
 		((buff_list*)filp->private_data)->my_buff->lseek = 0;
 		((buff_list*)filp->private_data)->my_buff->curr_buff_size = 0;
 		break;
 	case MY_RESTART:
 		printk("RESTART is on\n");
 		if (filp->private_data == NULL) return 0;
+		// set read to the start of the buffer
 		((buff_list*)filp->private_data)->my_buff->lseek = 0;
 		break;
 	case MY_SET_SEED:
 		printk("SEED changed from %lu to %lu\n", ((buff_list*)filp->private_data)->my_buff->seed, arg);
 		if (filp->private_data == NULL) return 0;
+		// set the seed for this device file
 		((buff_list*)filp->private_data)->my_buff->seed = arg;
 		break;
 	default:
@@ -281,6 +294,8 @@ uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed) {
 	return h;
 }
 
+// get the minor of a device file, 
+// and search for it's node in the linked list
 buff_list* find_node(int key) {
 	buff_list* curr_node = head;
 	while (curr_node)
@@ -291,16 +306,19 @@ buff_list* find_node(int key) {
 	return curr_node;
 }
 
+// add the given node to the head of the linked list
 void add_node(buff_list* new_node) {
 	buff_list* temp = head;
 	head = new_node;
 	new_node->p_next = temp;
 }
 
+// remove the node for the given minor number from the linked list
 void rm_node(int key) {
 	if (find_node(key) == NULL) return;
-	//the node exist
+	//the node exists
 	buff_list* itr = head;
+	// handle the case where we need to remove the head of the list
 	if (itr->key == key)
 	{
 		head = itr->p_next;
@@ -308,6 +326,8 @@ void rm_node(int key) {
 		kfree(itr);
 		return;
 	}
+	// the key does not correspond to the head of the list
+	// search the rest of the list and remove the node
 	while (itr->p_next->key != key)
 	{
 		itr = itr->p_next;
@@ -318,6 +338,7 @@ void rm_node(int key) {
 	kfree(temp);
 }
 
+// create a new node for the given minor number
 buff_list* mk_node(int key) {
 	buff_list* new_node = (buff_list*)kmalloc(sizeof(buff_list), GFP_KERNEL);
 	new_node->my_buff = (buff_data*)kmalloc(sizeof(buff_data), GFP_KERNEL);
